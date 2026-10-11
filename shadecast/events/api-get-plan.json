@@ -1,0 +1,5 @@
+{
+  "httpMethod": "GET",
+  "path": "/plan",
+  "queryStringParameters": { "site_id": "kolar-road", "date": "2026-05-15" }
+}

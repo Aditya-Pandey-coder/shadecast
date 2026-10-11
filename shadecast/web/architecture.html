@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadecast — architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&family=Noto+Sans+Devanagari:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDEFE8;
+    --ink:#1B2420;
+    --ink-soft:#4A564E;
+    --rule:#C7CFC2;
+    --accent:#B33A1E;   /* the one hue that carries meaning: the data path */
+    --cool:#245C8A;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);color:var(--ink);
+    font-family:Archivo,'Noto Sans Devanagari',system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:40px 24px;
+  }
+  figure{margin:0;max-width:1120px;width:100%}
+  .mast{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .logo{font-weight:800;font-size:22px;letter-spacing:-.02em}
+  .logo .dev{font-family:'Noto Sans Devanagari',serif;opacity:.5;margin-left:5px}
+  .mast .sub{font-size:14px;color:var(--ink-soft)}
+  svg{width:100%;height:auto;display:block;margin-top:14px}
+  figcaption{margin-top:18px;font-size:13.5px;color:var(--ink-soft);
+             line-height:1.6;max-width:76ch}
+  figcaption b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<figure>
+  <div class="mast">
+    <span class="logo">Shadecast<span class="dev">छाँव</span></span>
+    <span class="sub">forecast → heat strain → a shift a crew can work</span>
+  </div>
+
+  <svg viewBox="0 0 1120 440" role="img"
+       aria-label="NOAA GFS forecast data in S3 is subset by byte range into a container-image Lambda, stored in DynamoDB, planned by a dependency-free Lambda, and delivered to workers by SNS and to supervisors through API Gateway.">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+      </marker>
+      <marker id="ar-hot" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#B33A1E"/>
+      </marker>
+    </defs>
+
+    <!-- OUTSIDE AWS ACCOUNT: the open data -->
+    <rect x="8" y="78" width="212" height="128" rx="4"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="24" y="104" font-size="12" fill="#4A564E">Registry of Open Data</text>
+    <text x="24" y="128" font-size="15" font-weight="600">NOAA GFS</text>
+    <text x="24" y="150" font-size="11.5" font-family="ui-monospace,monospace"
+          fill="#B33A1E">s3://noaa-gfs-bdp-pds</text>
+    <text x="24" y="172" font-size="11.5" fill="#4A564E">CC0 · no account needed</text>
+    <text x="24" y="190" font-size="11.5" fill="#4A564E">new cycle every 6 h</text>
+
+    <!-- byte-range arrow: the hop the whole pipeline turns on -->
+    <line x1="220" y1="142" x2="312" y2="142" stroke="#B33A1E" stroke-width="2.5"
+          marker-end="url(#ar-hot)"/>
+    <text x="266" y="130" font-size="11.5" text-anchor="middle" font-weight="600"
+          fill="#B33A1E">.idx + ranged GET</text>
+    <text x="266" y="162" font-size="11.5" text-anchor="middle" fill="#B33A1E">2 MB, not 500 MB</text>
+
+    <!-- THE ACCOUNT BOUNDARY -->
+    <rect x="312" y="28" width="610" height="384" rx="6"
+          fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4"
+          opacity="0.45"/>
+    <text x="328" y="50" font-size="11.5" fill="#4A564E" opacity="0.8">your AWS account · free tier</text>
+
+    <!-- ingest lambda -->
+    <rect x="336" y="80" width="192" height="92" rx="4"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="352" y="104" font-size="11.5" fill="#4A564E">Lambda · container image</text>
+    <text x="352" y="126" font-size="14.5" font-weight="600">ingest</text>
+    <text x="352" y="148" font-size="11.5" fill="#4A564E">cfgrib / ecCodes decode</text>
+    <text x="352" y="164" font-size="11.5" fill="#4A564E">5 fields per hour</text>
+
+    <!-- eventbridge feeding ingest -->
+    <rect x="336" y="196" width="192" height="52" rx="4"
+          fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.75"/>
+    <text x="352" y="218" font-size="11.5" fill="#4A564E">EventBridge</text>
+    <text x="352" y="236" font-size="12.5" font-weight="500">04:30 / 10:30 / 16:30 / 22:30 Z</text>
+    <line x1="432" y1="196" x2="432" y2="174" stroke="currentColor" stroke-width="1.5"
+          marker-end="url(#ar)" opacity="0.75"/>
+
+    <!-- ingest -> dynamo -->
+    <line x1="528" y1="126" x2="596" y2="126" stroke="currentColor" stroke-width="2"
+          marker-end="url(#ar)"/>
+    <text x="562" y="114" font-size="11" text-anchor="middle" fill="#4A564E">writes</text>
+
+    <!-- dynamodb -->
+    <rect x="596" y="80" width="150" height="92" rx="4"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="612" y="104" font-size="11.5" fill="#4A564E">DynamoDB</text>
+    <text x="612" y="126" font-size="14.5" font-weight="600">forecast</text>
+    <text x="612" y="148" font-size="11.5" fill="#4A564E">keyed by grid cell</text>
+    <text x="612" y="164" font-size="11.5" fill="#4A564E">7-day TTL</text>
+
+    <!-- dynamo -> planner (down) -->
+    <line x1="671" y1="172" x2="671" y2="232" stroke="currentColor" stroke-width="2"
+          marker-end="url(#ar)"/>
+    <text x="683" y="206" font-size="11" fill="#4A564E">reads</text>
+
+    <!-- planner lambda: the heart -->
+    <rect x="482" y="232" width="252" height="112" rx="4"
+          fill="none" stroke="#B33A1E" stroke-width="2.5"/>
+    <text x="498" y="256" font-size="11.5" fill="#B33A1E">Lambda · plain zip, zero deps</text>
+    <text x="498" y="278" font-size="14.5" font-weight="600">planner</text>
+    <text x="498" y="300" font-size="11.5" fill="#4A564E">WBGT = 0.7·Tnwb + 0.2·Tg + 0.1·Ta</text>
+    <text x="498" y="318" font-size="11.5" fill="#4A564E">ACGIH work–rest thresholds</text>
+    <text x="498" y="336" font-size="11.5" fill="#4A564E">search every legal shift placement</text>
+
+    <!-- eventbridge feeding planner -->
+    <rect x="336" y="264" width="126" height="48" rx="4"
+          fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.75"/>
+    <text x="352" y="284" font-size="11.5" fill="#4A564E">EventBridge</text>
+    <text x="352" y="302" font-size="12.5" font-weight="500">+1 h after ingest</text>
+    <line x1="462" y1="288" x2="482" y2="288" stroke="currentColor" stroke-width="1.5"
+          marker-end="url(#ar)" opacity="0.75"/>
+
+    <!-- planner -> sns -->
+    <line x1="734" y1="268" x2="806" y2="268" stroke="#B33A1E" stroke-width="2.5"
+          marker-end="url(#ar-hot)"/>
+    <text x="770" y="256" font-size="11" text-anchor="middle" fill="#B33A1E">publishes</text>
+
+    <!-- planner -> api -->
+    <line x1="734" y1="320" x2="806" y2="320" stroke="currentColor" stroke-width="2"
+          marker-end="url(#ar)"/>
+    <text x="770" y="340" font-size="11" text-anchor="middle" fill="#4A564E">serves</text>
+
+    <!-- sns -->
+    <rect x="806" y="240" width="100" height="56" rx="4"
+          fill="none" stroke="#B33A1E" stroke-width="2"/>
+    <text x="822" y="262" font-size="11.5" fill="#4A564E">SNS</text>
+    <text x="822" y="282" font-size="13.5" font-weight="600">SMS</text>
+
+    <!-- api gw -->
+    <rect x="806" y="296" width="100" height="56" rx="4"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="822" y="318" font-size="11.5" fill="#4A564E">API Gateway</text>
+    <text x="822" y="338" font-size="13.5" font-weight="600">+ S3 site</text>
+
+    <!-- THE PEOPLE -->
+    <!-- worker -->
+    <line x1="906" y1="268" x2="968" y2="268" stroke="#B33A1E" stroke-width="2.5"
+          marker-end="url(#ar-hot)"/>
+    <rect x="968" y="232" width="144" height="72" rx="4"
+          fill="none" stroke="#B33A1E" stroke-width="2"/>
+    <text x="984" y="256" font-size="11.5" fill="#4A564E">every worker</text>
+    <text x="984" y="278" font-size="13.5" font-weight="600">Hindi SMS</text>
+    <text x="984" y="296" font-size="11" fill="#4A564E">feature phone · no app</text>
+
+    <!-- supervisor -->
+    <line x1="906" y1="324" x2="968" y2="324" stroke="currentColor" stroke-width="2"
+          marker-end="url(#ar)"/>
+    <rect x="968" y="312" width="144" height="60" rx="4"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="984" y="334" font-size="11.5" fill="#4A564E">supervisor</text>
+    <text x="984" y="356" font-size="13.5" font-weight="600">shift sheet</text>
+
+    <!-- footer note: the dependency split, stated as a line not a box -->
+    <line x1="336" y1="392" x2="734" y2="392" stroke="currentColor" stroke-width="1"
+          opacity="0.3"/>
+    <text x="336" y="410" font-size="11.5" fill="#4A564E">
+      GRIB needs a native library. Heat strain needs arithmetic. They are split so the function that must not fail has nothing to break.
+    </text>
+  </svg>
+
+  <figcaption>
+    <b>The forecast only exists in S3 — that is why this is on AWS, not decorated with it.</b>
+    A full GFS file for one forecast hour is ~500 MB and Shadecast needs five fields, so ingest reads the
+    sibling <code>.idx</code> index, computes byte offsets and issues ranged GETs: about 2 MB per hour,
+    which is what keeps the pull inside a Lambda timeout. The planner is marked in red because it is the
+    function that must never fail; it carries no dependencies at all, so a broken GRIB build can stop
+    tomorrow's forecast but never stop today's shift sheet.
+  </figcaption>
+</figure>
+</body>
+</html>

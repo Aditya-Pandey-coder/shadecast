@@ -1,0 +1,10 @@
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+.aws-sam/
+*.grib2
+*.idx
+.DS_Store
+.shadecast-data/
+.pytest_cache/

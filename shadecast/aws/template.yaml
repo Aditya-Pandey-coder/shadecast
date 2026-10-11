@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Shadecast - heat-aware shift planning for outdoor crews.
+  NOAA GFS (Registry of Open Data on AWS) -> WBGT -> ACGIH work-rest plan -> SMS.
+  Everything here is inside the AWS Free Tier at demo scale.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        SITES_TABLE: !Ref SitesTable
+        WEATHER_TABLE: !Ref WeatherTable
+        PLANS_TABLE: !Ref PlansTable
+        ALERT_TOPIC_ARN: !Ref AlertTopic
+
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # Data
+  # ---------------------------------------------------------------------------
+
+  SitesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: shadecast-sites
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: site_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: site_id
+          KeyType: HASH
+
+  # Hourly forecast, keyed by GFS grid cell rather than by site, so twenty sites in
+  # one city cost one fetch and one set of rows.
+  WeatherTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: shadecast-weather
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: grid
+          AttributeType: S
+        - AttributeName: hour_ist
+          AttributeType: S
+      KeySchema:
+        - AttributeName: grid
+          KeyType: HASH
+        - AttributeName: hour_ist
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  PlansTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: shadecast-plans
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: site_id
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: site_id
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: shadecast-alerts
+      DisplayName: SHADECAST
+
+  # ---------------------------------------------------------------------------
+  # Compute
+  # ---------------------------------------------------------------------------
+
+  # Pure stdlib. Plain zip, no layer, no container. This is the function that must
+  # never fail, so it has nothing that can fail to build.
+  PlannerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: shadecast-planner
+      CodeUri: ../
+      Handler: aws.lambda_planner.scheduled_handler
+      Description: Replan every site after each GFS cycle and notify the crews
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref SitesTable }
+        - DynamoDBReadPolicy: { TableName: !Ref WeatherTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref PlansTable }
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt AlertTopic.TopicName }
+      Events:
+        AfterEachGfsCycle:
+          Type: Schedule
+          Properties:
+            # GFS cycles land at 00/06/12/18Z and take 3-5 hours to publish, so we
+            # plan at 05/11/17/23Z, about an hour after ingest.
+            Schedule: cron(30 5,11,17,23 * * ? *)
+            Name: shadecast-after-gfs-cycle
+            Description: Replan once each GFS cycle has been ingested
+
+  PlanApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: shadecast-plan-api
+      CodeUri: ../
+      Handler: aws.lambda_planner.api_handler
+      Description: Serve one site's stored plan to the web UI
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref PlansTable }
+      Events:
+        GetPlan:
+          Type: Api
+          Properties:
+            Path: /plan
+            Method: get
+
+  # The only function with a native dependency (ecCodes, for GRIB2), so it ships as
+  # a container image. See aws/Dockerfile.
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: shadecast-ingest
+      PackageType: Image
+      Timeout: 600
+      MemorySize: 1024
+      Description: Pull NOAA GFS subsets from s3://noaa-gfs-bdp-pds into DynamoDB
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref SitesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref WeatherTable }
+      Events:
+        GfsCycle:
+          Type: Schedule
+          Properties:
+            Schedule: cron(30 4,10,16,22 * * ? *)
+            Name: shadecast-gfs-ingest
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../
+      DockerTag: latest
+
+  # ---------------------------------------------------------------------------
+  # Web
+  # ---------------------------------------------------------------------------
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'shadecast-web-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${WebBucket.Arn}/*'
+
+Outputs:
+  SupervisorUrl:
+    Description: The URL you put in the demo video
+    Value: !GetAtt WebBucket.WebsiteURL
+  PlanApi:
+    Description: GET /plan?site_id=kolar-road
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/plan'
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  WebBucketName:
+    Value: !Ref WebBucket
