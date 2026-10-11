@@ -1,9 +1,9 @@
 # Shadecast is a static site. The page is fully self-contained — the optimiser and the
-# hourly data are inlined into web/index.html by build_scenarios.py — so Netlify has
+# hourly data are inlined into shadecast/web/index.html by build_scenarios.py — so Netlify has
 # nothing to build. It just serves the folder.
 
 [build]
-  publish = "web"
+  publish = "shadecast/web"
   command = ""
 
 # The page loads no third-party code and makes no network requests of its own. These
