@@ -1,0 +1,25 @@
+# Shadecast is a static site. The page is fully self-contained — the optimiser and the
+# hourly data are inlined into web/index.html by build_scenarios.py — so Netlify has
+# nothing to build. It just serves the folder.
+
+[build]
+  publish = "web"
+  command = ""
+
+# The page loads no third-party code and makes no network requests of its own. These
+# headers say so at the server, which is the only place a browser will trust it from:
+# the CSP meta tag in the page cannot set frame-ancestors, and a meta tag can be
+# stripped by anything that rewrites the HTML.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; img-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), interest-cohort=()"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
